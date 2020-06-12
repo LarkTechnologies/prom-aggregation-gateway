@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"io/ioutil"
 
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -153,6 +154,7 @@ func TestAggate(t *testing.T) {
 		{duplicateLabels, "", "", duplicateErrorPrefix, nil},
 		{reorderedLabels1, reorderedLabels2, reorderedLabelsResult, "", nil},
 	} {
+	    Init(ioutil.Discard, ioutil.Discard, ioutil.Discard, ioutil.Discard,)
 		a := newAggate()
 
 		if err := a.parseAndMerge(strings.NewReader(c.a)); err != nil {

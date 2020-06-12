@@ -8,11 +8,44 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"os"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
+
+
+var (
+	Trace   *log.Logger
+	Info	*log.Logger
+	Warning *log.Logger
+	Error   *log.Logger
+)
+
+func Init(
+	traceHandle io.Writer,
+	infoHandle io.Writer,
+	warningHandle io.Writer,
+	errorHandle io.Writer) {
+
+	Trace = log.New(traceHandle,
+		"TRACE: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Info = log.New(infoHandle,
+		"INFO: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Warning = log.New(warningHandle,
+		"WARNING: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Error = log.New(errorHandle,
+		"ERROR: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+}
+
 
 func lablesLessThan(a, b []*dto.LabelPair) bool {
 	i, j := 0, 0
@@ -280,13 +313,15 @@ func healthyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	Init(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
+	Info.Println("Starting main")
 	listen := flag.String("listen", ":9091", "Address and port to listen on.")
 	cors := flag.String("cors", "*", "The 'Access-Control-Allow-Origin' value to be returned.")
 	pushPath := flag.String("push-path", "/metrics/", "HTTP path to accept pushed metrics.")
 	flag.Parse()
 
 	a := newAggate()
-	fmt.Printf("Listening on %s\n", *listen)
+	Info.Printf("Listening on %s\n", *listen)
 	http.HandleFunc("/metrics", a.handler)
 
 	http.HandleFunc("/-/healthy", healthyHandler)
@@ -300,5 +335,5 @@ func main() {
 			return
 		}
 	})
-	log.Fatal(http.ListenAndServe(*listen, nil))
+	Info.Println(http.ListenAndServe(*listen, nil))
 }
