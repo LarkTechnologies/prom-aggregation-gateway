@@ -8,11 +8,47 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"os"
+	"regexp"
+	"math"
+	"io/ioutil"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
+
+
+var (
+	Trace   *log.Logger
+	Info	*log.Logger
+	Warning *log.Logger
+	Error   *log.Logger
+)
+
+func Init(
+	traceHandle io.Writer,
+	infoHandle io.Writer,
+	warningHandle io.Writer,
+	errorHandle io.Writer) {
+
+	Trace = log.New(traceHandle,
+		"TRACE: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Info = log.New(infoHandle,
+		"INFO: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Warning = log.New(warningHandle,
+		"WARNING: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Error = log.New(errorHandle,
+		"ERROR: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+}
+
 
 func lablesLessThan(a, b []*dto.LabelPair) bool {
 	i, j := 0, 0
@@ -78,7 +114,7 @@ func mergeBuckets(a, b []*dto.Bucket) []*dto.Bucket {
 	return output
 }
 
-func mergeMetric(ty dto.MetricType, count int, a, b *dto.Metric) *dto.Metric {
+func mergeMetric(ty dto.MetricType, gaugeAggRule string, count int, a, b *dto.Metric) *dto.Metric {
 	switch ty {
 	case dto.MetricType_COUNTER:
 		return &dto.Metric{
@@ -90,11 +126,30 @@ func mergeMetric(ty dto.MetricType, count int, a, b *dto.Metric) *dto.Metric {
 		}
 
 	case dto.MetricType_GAUGE:
+		if gaugeAggRule == "" {
+			gaugeAggRule = "last"
+		}
+		var value float64
+		switch gaugeAggRule {
+			case "max":
+				value = math.Max(*a.Gauge.Value, *b.Gauge.Value)
+			case "min":
+				value = math.Min(*a.Gauge.Value, *b.Gauge.Value)
+			case "sum":
+				value = *a.Gauge.Value + *b.Gauge.Value
+			case "avg":
+				value = (*a.Gauge.Value*(float64(count)-1) + *b.Gauge.Value) / float64(count)
+			case "last":
+				value = *b.Gauge.Value
+			case "first":
+				value = *a.Gauge.Value
+		}
+		Trace.Printf("gauge aggregation: old=%.1f new=%.1f agg=%s out=%.1f", *a.Gauge.Value, *b.Gauge.Value, gaugeAggRule, value)
 		// Average out value
 		return &dto.Metric{
 			Label: a.Label,
 			Gauge: &dto.Gauge{
-				Value: float64ptr((*a.Gauge.Value*(float64(count)-1) + *b.Gauge.Value) / float64(count)),
+				Value: float64ptr(value),
 			},
 		}
 
@@ -146,6 +201,16 @@ func (a *aggate) mergeFamily(nf *dto.MetricFamily) error {
 			}
 			metrics[fp] = m
 		}
+	} else {
+		if *nf.Type == dto.MetricType_GAUGE {
+			help := nf.GetHelp()
+			pat := regexp.MustCompile(`<gauge:agg:(\w+)>`)
+			matches := pat.FindStringSubmatch(help)
+			if len(matches) > 1 {
+				Trace.Printf("Found aggregation for gauge: %s, %s", *nf.Name, matches[1])
+				a.gaugeAggRules[*nf.Name] = matches[1]
+			}
+		}
 	}
 
 	// Merge or add new Metrics
@@ -160,7 +225,7 @@ func (a *aggate) mergeFamily(nf *dto.MetricFamily) error {
 
 		oldMetric, ok := metrics[fp]
 		if ok {
-			metrics[fp] = mergeMetric(*nf.Type, a.fingerprintCounts[fp], oldMetric, m)
+			metrics[fp] = mergeMetric(*nf.Type, a.gaugeAggRules[*nf.Name], a.fingerprintCounts[fp], oldMetric, m)
 		} else {
 			metrics[fp] = m
 		}
@@ -212,12 +277,14 @@ func validateFamily(f *dto.MetricFamily) error {
 type aggate struct {
 	sync.RWMutex
 	families          map[string]*dto.MetricFamily
+	gaugeAggRules	  map[string]string
 	fingerprintCounts map[model.Fingerprint]int
 }
 
 func newAggate() *aggate {
 	return &aggate{
 		families:          map[string]*dto.MetricFamily{},
+		gaugeAggRules:     map[string]string{},
 		fingerprintCounts: make(map[model.Fingerprint]int),
 	}
 }
@@ -280,13 +347,15 @@ func healthyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	Init(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
+	Info.Println("Starting main")
 	listen := flag.String("listen", ":9091", "Address and port to listen on.")
 	cors := flag.String("cors", "*", "The 'Access-Control-Allow-Origin' value to be returned.")
 	pushPath := flag.String("push-path", "/metrics/", "HTTP path to accept pushed metrics.")
 	flag.Parse()
 
 	a := newAggate()
-	fmt.Printf("Listening on %s\n", *listen)
+	Info.Printf("Listening on %s\n", *listen)
 	http.HandleFunc("/metrics", a.handler)
 
 	http.HandleFunc("/-/healthy", healthyHandler)
@@ -300,5 +369,5 @@ func main() {
 			return
 		}
 	})
-	log.Fatal(http.ListenAndServe(*listen, nil))
+	Info.Println(http.ListenAndServe(*listen, nil))
 }

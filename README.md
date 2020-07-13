@@ -4,7 +4,14 @@ Prometheus Aggregation Gateway is a aggregating push gateway for Prometheus.  As
 
 * Counters where all labels match are added up.
 * Histograms are added up; if bucket boundaries are mismatched then the result has the union of all buckets and counts are given to the lowest bucket that fits.
-* Gauges are averaged (between each time /metrics is accessed)
+* Gauges are aggregated based on special syntax in the help string
+  * `<gauge:agg:METHOD>` where `METHOD` is one of the following:
+     * *last* (default)
+     * *first*
+     * *max*
+     * *min*
+     * *sum*
+     * *avg*
 * Summaries are discarded.
 
 ## How to use

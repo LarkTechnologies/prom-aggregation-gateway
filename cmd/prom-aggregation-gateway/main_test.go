@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"io/ioutil"
 
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -60,7 +61,7 @@ histogram_count 1
 counter 60
 # HELP gauge A gauge
 # TYPE gauge gauge
-gauge 49.5
+gauge 57
 # HELP histogram A histogram
 # TYPE histogram histogram
 histogram_bucket{le="1"} 0
@@ -117,6 +118,110 @@ ui_external_lib_loaded{loaded="true",name="Intercom"} 1
 ui_external_lib_loaded{loaded="true",name="ga"} 1
 ui_external_lib_loaded{loaded="true",name="mixpanel"} 1
 `
+	gaugeMaxInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:max>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeMaxInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:max>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 1
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeMaxOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:max>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeMinInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:min>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeMinInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:min>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 1
+ui_external_lib_loaded{loaded="true",name="ga"} 5
+`
+	gaugeMinOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:min>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 1
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeSumInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:sum>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeSumInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:sum>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 2
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeSumOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:sum>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 6
+ui_external_lib_loaded{loaded="true",name="ga"} 4
+`
+	gaugeAvgInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:avg>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeAvgInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:avg>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 2
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeAvgOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:avg>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 3
+ui_external_lib_loaded{loaded="true",name="ga"} 2
+`
+
+	gaugeLastInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:last>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeLastInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:last>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 2
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeLastOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:last>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 2
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeFirstInput1 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:first>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+	gaugeFirstInput2 = `
+# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:first>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 2
+ui_external_lib_loaded{loaded="true",name="ga"} 1
+`
+	gaugeFirstOutput = `# HELP ui_external_lib_loaded A gauge with entries in un-sorted order <gauge:agg:first>
+# TYPE ui_external_lib_loaded gauge
+ui_external_lib_loaded{loaded="true",name="Intercom"} 4
+ui_external_lib_loaded{loaded="true",name="ga"} 3
+`
+
 	duplicateLabels = `
 # HELP ui_external_lib_loaded Test with duplicate values
 # TYPE ui_external_lib_loaded gauge
@@ -146,6 +251,12 @@ func TestAggate(t *testing.T) {
 		errorPrefix string
 		err2        error
 	}{
+		{gaugeMaxInput1, gaugeMaxInput2, gaugeMaxOutput, "", nil},
+		{gaugeMinInput1, gaugeMinInput2, gaugeMinOutput, "", nil},
+		{gaugeSumInput1, gaugeSumInput2, gaugeSumOutput, "", nil},
+		{gaugeAvgInput1, gaugeAvgInput2, gaugeAvgOutput, "", nil},
+		{gaugeLastInput1, gaugeLastInput2, gaugeLastOutput, "", nil},
+		{gaugeFirstInput1, gaugeFirstInput2, gaugeFirstOutput, "", nil},
 		{gaugeInput, gaugeInput, gaugeOutput, "", nil},
 		{in1, in2, want, "", nil},
 		{multilabel1, multilabel2, multilabelResult, "", nil},
@@ -153,6 +264,7 @@ func TestAggate(t *testing.T) {
 		{duplicateLabels, "", "", duplicateErrorPrefix, nil},
 		{reorderedLabels1, reorderedLabels2, reorderedLabelsResult, "", nil},
 	} {
+	    Init(ioutil.Discard, ioutil.Discard, ioutil.Discard, ioutil.Discard,)
 		a := newAggate()
 
 		if err := a.parseAndMerge(strings.NewReader(c.a)); err != nil {
