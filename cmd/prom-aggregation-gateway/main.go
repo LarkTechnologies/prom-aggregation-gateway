@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"math"
+	"io/ioutil"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -346,7 +347,7 @@ func healthyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	Init(os.Stdout, os.Stdout, os.Stdout, os.Stderr)
+	Init(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
 	Info.Println("Starting main")
 	listen := flag.String("listen", ":9091", "Address and port to listen on.")
 	cors := flag.String("cors", "*", "The 'Access-Control-Allow-Origin' value to be returned.")
