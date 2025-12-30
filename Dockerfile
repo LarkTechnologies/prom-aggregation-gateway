@@ -11,4 +11,7 @@ FROM scratch
 COPY --from=builder /go/bin /app/
 EXPOSE 9091
 WORKDIR /app
+
+# Run as non-root user for security
+USER 1001
 CMD ["./prom-aggregation-gateway"]
